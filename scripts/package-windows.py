@@ -90,8 +90,14 @@ def setup_script(version, archives):
     for index, archive in enumerate(archives):
         filename = archive.name
         expected = digest(archive)
-        verify = (f'"%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -Command "if ((Get-FileHash -LiteralPath '
-                  f"'.downloads\\{filename}' -Algorithm SHA256).Hash -ne '{expected}') {{ exit 1 }}\"")
+        verify = (
+            '"%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -Command '
+            f"\"$ErrorActionPreference='Stop'; $s=[IO.File]::OpenRead('.downloads\\{filename}'); "
+            "try { $h=[Security.Cryptography.SHA256]::Create(); "
+            "try { $v=[BitConverter]::ToString($h.ComputeHash($s)).Replace('-',''); "
+            f"if ($v -ne '{expected}') {{ exit 1 }} "
+            "} finally { $h.Dispose() } } finally { $s.Dispose() }\""
+        )
         lines += [
             f'if not exist ".downloads\\{filename}" goto download_{index}',
             verify, f"if not errorlevel 1 goto ready_{index}",

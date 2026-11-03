@@ -117,7 +117,8 @@ class WindowsPackageTests(unittest.TestCase):
         script = (output / "Setup-RAG.cmd").read_text()
         self.assertIn(packager.digest(app), script)
         self.assertIn(packager.digest(model), script)
-        self.assertIn("Get-FileHash", script)
+        self.assertIn("[Security.Cryptography.SHA256]::Create()", script)
+        self.assertIn("ComputeHash($s)", script)
         self.assertNotIn("ExecutionPolicy", script)
         self.assertIn("if errorlevel 1 goto failed", script)
         if os.name == "nt":
