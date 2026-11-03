@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'">
+    <title>Kubernetes WebAI RAG</title>
+    <link rel="stylesheet" href="css/style.css">
+  </head>
+  <body>
+    <div id="container">
+      <header>
+        <h1>Kubernetes WebAI RAG</h1>
+        <p>Gemma 4 E2B answers using locally retrieved Kubernetes documentation.
+          Everything runs in your browser; the documentation index is already built.</p>
+      </header>
+      <div class="card">
+        <form id="search-form" class="input-group-vertical">
+          <div class="input-wrapper">
+            <label for="query">Kubernetes question</label>
+            <input id="query" type="text" value="How do I create a Deployment?" maxlength="2000" required>
+          </div>
+          <button id="search-button" type="submit" disabled>Generate answer</button>
+          <button id="stop-button" type="button" hidden>Stop generation</button>
+        </form>
+        <p id="status" class="status" role="status">Loading the prebuilt dataset and query model...</p>
+        <section id="answer" hidden>
+          <h2>Gemma 4 answer</h2>
+          <pre id="answer-text" style="white-space:pre-wrap;overflow-wrap:anywhere" aria-live="polite"></pre>
+        </section>
+        <h2>Retrieved documentation</h2>
+        <div id="results"></div>
+      </div>
+      <p class="subtitle">Generated answers can be wrong. Check their source citations.
+        Documentation by Kubernetes Authors, licensed under CC BY 4.0.
+        <a href="docs/">Read the offline documentation.</a></p>
+    </div>
+    <script type="module" src="js/kubernetes.js"></script>
+  </body>
+</html>

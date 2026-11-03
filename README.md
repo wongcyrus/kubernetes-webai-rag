@@ -1,240 +1,155 @@
-# VectorSearch.js
-### A library to perform semantic vector search, over millions of vectors in milliseconds, and can even visualize the tokens or embeddings too! Runs entirely client side in the web browser (custom Vector DB layer written on top of IndexDB) and currently supports Google's EmbeddingGemma (highest quality but 300Mb), or all-Mini-L6-v2 (fastest and only 30mb), or other Transformers.js embedding models like Snowflake/snowflake-arctic-embed via Web AI libraries with WebGPU acceleration for speed.
+# Kubernetes WebAI RAG
 
-🦾 As it runs in the browser on YOUR hardware it's totally private, costs zero dollars to use (other than your own electricity), and super low latency. 
+Offline Kubernetes documentation search and answers, powered by **Gemma 4 E2B,
+LiteRT-LM and WebGPU**, entirely in the browser. Designed for Windows 11 student
+computers with a localhost web server and no internet during use.
 
-🤖 Powered by WebGPU for speed and builds upon no less than 3 popular Web ML Libraries and runtimes to get the best bits of all of them: [LiteRT.js](https://ai.google.dev/edge/litert/web/get_started), [Transformers.js](https://huggingface.co/docs/transformers.js/en/index), and [TensorFlow.js](https://www.tensorflow.org/js).
+This application is derived from [Jason Mayes' VectorSearch.js](https://github.com/jasonmayes/VectorSearch.js).
+It retains his retrieval core and attribution, but adds a prebuilt Kubernetes
+corpus, hybrid ranking, local documentation, cited answers and persistent model
+caching. It is not the upstream library's general-purpose demo.
 
-⭐ Give it a star on Github if you want me to keep evolving the code or have ideas. 
+## Windows 11: student installation
 
-### Show me a demo that works already
+Download `Setup-RAG.cmd` from the project's release and run it **before the exam**.
+It downloads the two release archives, verifies their SHA-256 checksums, and
+extracts them into `kubernetes-webai-rag/`. Alternatively, download both archives
+and extract both into the same directory.
 
-Sure [check out my Codepen demo here](https://codepen.io/jasonmayes/pen/JoKMBmq)!
+Double-click `kubernetes-webai-rag/Start-RAG.cmd`. The included, unmodified
+Windows x64 embeddable Python runtime serves `app/` on `127.0.0.1:8080` and opens:
 
-Here's a screen shot of it in action captured in real-time on an NVIDIA 1070 GPU running the larger EmbeddingGemma model:
+**http://localhost:8080/kubernetes.html**
 
-![Screenshot of VectorSearch.js in action](https://github.com/jasonmayes/VectorSearch.js/blob/main/demo/demo.gif?raw=true)
+Allow approximately **8 GiB of free disk space** for the downloaded archives,
+extracted website/runtime and browser model cache. The online setup script
+requires public release assets; for a private repository, distribute the two
+archives directly and extract them manually.
 
-### Got questions? 
-[Reach out to me over on LinkedIn](https://www.linkedin.com/in/webai) or follow for updates on related client side Web AI projects.
+Keep the server window open; Ctrl+C stops it. Python installation, npm, HTTPS
+certificates and insecure-origin flags are not needed. If port 8080 belongs to
+another application, the launcher reports the conflict instead of silently
+changing the origin and losing access to the browser's model cache.
 
+Use an up-to-date Chrome or compatible Chromium browser with **hardware WebGPU**.
+Check `chrome://gpu`: a software adapter such as SwiftShader can be far too slow
+for full prompts. HTTPS or localhost enables the API but cannot provide a missing
+GPU. Windows ARM64 is not the packaged target. Institutional execution policies
+may require IT approval of the downloaded launcher/runtime.
 
-## Usage
+Before the exam, generate a complete answer, follow a citation, refresh and check
+the cached model, then repeat with internet disconnected. Keep the tab open to
+retain the loaded GPU engine. Native Windows GPU/launcher acceptance testing is
+required before treating a release as exam-ready.
 
-```javascript
-import { VectorSearch } from 'https://cdn.jsdelivr.net/gh/jasonmayes/VectorSearch.js@main/VectorSearch-min.js';
+## What stays local
 
-// Embedding Model Configuration.
-const MODEL_RUNTIME = 'litertjs'; // OR 'transformersjs'
-const MODEL_URL = 'model/embeddinggemma-300M_seq1024_mixed-precision.tflite'; // OR supported transformersjs embedders e.g. 'Xenova/all-MiniLM-L6-v2' or 'Snowflake/snowflake-arctic-embed-s' as examples if transformersjs runtime above.
-const SEQ_LENGTH = 1024;
-const TOKENIZER = 'onnx-community/embeddinggemma-300m-ONNX';
-const EMBEDDING_MODEL_CONFIG = {
-  runtime: MODEL_RUNTIME,
-  url: MODEL_URL,
-  sequenceLength: SEQ_LENGTH,
-  tokenizer: TOKENIZER
-};
+- The same prebuilt index is distributed to every student. No documentation
+  embedding or IndexedDB corpus import happens on page load.
+- EmbeddingGemma embeds only the question. Semantic similarity and offline BM25
+  postings are fused across headings/pages, preferring distinct relevant pages.
+- Gemma 4 receives the retrieved passages in a fresh conversation per question.
+  Answers stream with `[1]` citations linking to local documentation headings.
+- Citation links come from retrieved records, not generated URLs. Generated HTML
+  is inert text. Unknown source numbers remain unlinked.
+- Remote model loading is disabled, runtime assets are bundled locally, and a
+  same-origin content security policy blocks external connections.
 
-// Instantiate VectorSearch Master Class.
-const VECTOR_SEARCH = new VectorSearch(EMBEDDING_MODEL_CONFIG);
+The complete prepared website is approximately **2.4 GiB**. Gemma 4's model is
+2,008,432,640 bytes. The browser additionally stores about 2 GB in OPFS, keyed by
+the pinned model checksum. After the first complete save, refreshing reads the
+model from browser disk storage without requesting it from the server. GPU
+initialization still repeats.
 
-// Initiation and usage example.
-async function init(statusDomElement) {
-  // Actually load the chosen runtime and model so ready to use.
-  await VECTOR_SEARCH.load(statusDomElement);
+Cache storage belongs to a browser profile and an origin (scheme, hostname and
+port). Clearing site data, private browsing, address changes or storage eviction
+can require another transfer. Persistent storage is requested where available.
+If storage is unavailable or full, the app reports that it is loading without
+caching. Incomplete cache downloads are not reused.
 
-  await store(['I love Web AI', 'I like cats', 'Dogs are cool too', 'AI rocks', 'Birds can fly', 'Web AI is client side AI', 'Fish can swim', 'Robots are neat', 'JavaScript rocks too!', 'and so on']);
-  await find('Likes animals', 0.25);
-}
+## Build and run from source
 
-init();
+Maintainer requirements: Node.js 24+, npm, and internet for initial preparation.
+Python 3.14+ is needed only for Windows packaging and its server tests.
 
-
-// How to store text in client side VectorDB
-async function store(someArrayOfStrings) {
-  await VECTOR_SEARCH.storeTexts(someArrayOfStrings, 'DatabaseNameForThisData');
-  
-  // Optionally can specify callback to write status to a HTML DOM element:
-  // await VECTOR_SEARCH.storeTexts(someArrayOfStrings, 'DatabaseNameForThisData', STATUS_EL);
-  
-  // You can also specify batch size to store array of strings much faster when using all-Mini-L6-v2 model only for now.
-  // await VECTOR_SEARCH.storeTexts(someArrayOfStrings, 'DatabaseNameForThisData', undefined, 100);
-
-  // Finally you can also specify embedding task type if using EmbeddingGemma. Can be one of the following strings:
-  // document, query, retrieval, search_query, classification, clustering, similarity, code_retrieval
-  // Store defaults to 'document' if you do not specify.
-  // await VECTOR_SEARCH.storeTexts(someArrayOfStrings, 'DatabaseNameForThisData', undefined, undefined, 'document');
-}
-
-
-// Search example.
-async function find(queryText, cosineSimilarityThreshold) {
-  const {embedding: EMBEDDING_DATA, tokens: TOKENS} = await VECTOR_SEARCH.getEmbedding(queryText, 'query');
-
-  /** Optional: Visualize embeddings and tokens for the search query text.
-  if (TOKENS) {
-    VECTOR_SEARCH.renderTokens(TOKENS, SOME_DOM_ELEMENT);
-  }
-  await VECTOR_SEARCH.renderEmbedding(EMBEDDING_DATA, SOME_DOM_ELEMENT_FOR_VISUAL, SOME_DOM_ELEMENT_FOR_TEXT);
-  **/
-
-  // Now actually search the vector database.
-  const {results: RESULTS, bestScore: BEST_SCORE, bestIndex: BEST_INDEX} = await VECTOR_SEARCH.search(EMBEDDING_DATA, cosineSimilarityThreshold, 'DatabaseNameForThisData');
-
-  if (RESULTS.length > 0) {  
-    const BEST_MATCH_VECTOR = RESULTS[BEST_INDEX].vector;
-    const BEST_MATCH_SCORE = RESULTS[BEST_INDEX].score;
-    const BEST_MATCH_TEXT = RESULTS[BEST_INDEX].text;
-    if (BEST_MATCH_TEXT) {
-      console.log(BEST_MATCH_SCORE + ': ' + BEST_MATCH_TEXT);
-      // Logs: 0.7519992589950562: I like cats.
-    }
-  } else {
-    console.log('No matches found above threshold.');
-  }
-}
+```sh
+npm ci
+npm test
+npm run build:kubernetes
+npm run test:retrieval
+npm run prepare:offline
+npm start
 ```
 
-## Performance
+`npm run build:kubernetes` is the expensive **one-time corpus build**, not a
+student startup step. It downloads the Kubernetes print view and English sitemap,
+builds heading-aware chunks and computes real embeddings on CPU. It checkpoints
+every 64 chunks by default; rerunning the same command resumes interrupted work.
+Do not rebuild just to change the UI.
 
-[I tried to make this as fast as I could](https://www.linkedin.com/posts/webai_rag-litertjs-embeddinggemma-activity-7423026459201523712-IWiD?utm_source=share&utm_medium=member_desktop&rcm=ACoAAE29dSoB2Q5rqrgken9VCQgyG_zQ-gVgvG8). I have tested with 100K vectors on my very old NVIDIA 1070 GPU and it can search those in tens of miliseconds using the more complex EmbeddingGemma model by Google. The largest cost is actually the embedding that takes around 200ms using the EmbeddingGemma model (high quality but large). You may want to swap this out for a leaner embedding model (e.g. all-MiniLM-L6-v2) for the ultimate client side speed of embedding - see example code above for how to change the config object to use that instead.
-
-Currently it is designed to preload the IndexDB vector DB I wrote (yes even the vector DB is client side) into GPU memory to perform as fast as possible when calculating cosine similarity for your target text across all stored vectors. So that means the first search you perform will be slower as it has to transfer memory from CPU to GPU for the first time (suggest doing a dummy vector search on page load to warm up). This also means that it currently takes roughly the SAME time for 100K vectors searched vs 1K vectors due to leveraging the GPU. I have not yet found the upper bound, but there is obviously a limit here, depending on your GPU type, VRAM size etc. I will later need to refactor to load in chunks to avoid any issues for larger vector stores on client side.
-
-I have verified this works on Intel integrated GPUs, NVIDIA, AMD, and Apple M GPUs in any web browser that supports WebGPU (most of them do now).
-
-## Building and serving yourself
-
-To build the minified version of the library from the src folder just run:
-
-```
-npm run build
+```sh
+npm run build:kubernetes -- --html kubernetes-print.html --sitemap kubernetes-en-sitemap.xml
 ```
 
-Then to serve the demo folder to try it out on your own webserver run:
+The builder pins the model revision, uses q4 EmbeddingGemma `sentence_embedding`
+outputs, and saves the original source snapshot in `data/kubernetes/`. Chunks fit
+512 tokens with 64-token overlap. Canonical heading URLs are recovered from Hugo
+print IDs and the sitemap; unresolved pages retain their unique print anchor.
 
-```
-npm run demo
-```
+`npm run prepare:offline` verifies that the readable docs match the indexed
+snapshot and prepares `offline/` with the index, models, runtimes, local
+documentation/assets and licenses. It refuses partial smoke-test datasets.
+Initial preparation downloads model weights; student use requires none of those
+external services.
 
-Please note that currently script.js in the demo/js folder imports the latest version of VectorSearch-min.js from this Github repo so change the import if you modify anything or want to host somewhere else.
+`npm run build` only rebuilds the browser JavaScript/UI into `offline/`. It does
+not download models or rebuild the index. It can run in CI without a corpus.
 
-Please also see below for things you need to host yourself to run on your own server.
+## Windows release packaging
 
+After preparing the complete website:
 
-## Things to be aware of before hosting and running yourself
-
-This project depends on a few things that need to be setup to work.
-
-### EmbeddingGemma model
-
-This repo uses Google's EmbeddingGemma model for the embedding model by default for highest quality. Specifically this one: embeddinggemma-300M_seq1024_mixed-precision.tflite
-
-This model is available to download from HuggingFace which you must do yourself manually:
-
-[Download it yourself from HuggingFace](https://huggingface.co/litert-community/embeddinggemma-300m/resolve/main/embeddinggemma-300M_seq1024_mixed-precision.tflite?download=true) so any applicable T&C accepted. You can then place this downloaded model into the demo/model folder. If you place it somewhere else update the code in script.js accordingly:
-
-```javascript
-// Embedding Model Configuration.
-const MODEL_RUNTIME = 'litertjs';
-const MODEL_URL = 'model/embeddinggemma-300M_seq1024_mixed-precision.tflite';
-const SEQ_LENGTH = 1024;
-const TOKENIZER = 'onnx-community/embeddinggemma-300m-ONNX';
-const EMBEDDING_MODEL_CONFIG = {
-  runtime: MODEL_RUNTIME,
-  url: MODEL_URL,
-  sequenceLength: SEQ_LENGTH,
-  tokenizer: TOKENIZER
-};
-
-// Instantiate VectorSearch Master Class.
-const VECTOR_SEARCH = new VectorSearch(EMBEDDING_MODEL_CONFIG);
+```sh
+npm run test:windows
+npm run package:windows
 ```
 
-For more details [see the model card page on HuggingFace](https://huggingface.co/litert-community/embeddinggemma-300m).
+The packager downloads and checksum-verifies the official Python 3.14.4 Windows
+x64 embeddable runtime. It emits two ZIP archives, `Setup-RAG.cmd` and
+`SHA256SUMS.txt` in `dist/`. Every archive is checked against GitHub's **under
+2 GiB per asset** limit. The answer model is separated from the smaller application
+archive; do not put model weights in Git or Git LFS.
 
-This is a LiteRT.js Web AI compatible EmbeddingGemma model using the tflite model format.
+The setup script uses Windows 11's built-in curl, tar and PowerShell checksum
+support. It does not change execution policy or request administrator privileges.
+Manual extraction of both archives is available for disconnected distribution.
+Only explicitly selected application assets are packaged: temporary certificates,
+private keys, build checkpoints, old dataset versions and `node_modules` are not
+included.
 
-### all-MiniLM-L6-v2 or Snowflake/snowflake-arctic-embed-s embedding models
+## Project layout
 
-If you wish to use the all-MiniLM-L6-v2 or Snowflake/snowflake-arctic-embed-s embedding models instead for speed you can change the config object to be one of the following:
+| Path | Purpose |
+|---|---|
+| `src/` | Retrieval, embedding and Gemma generation code |
+| `web/` | Browser UI source |
+| `scripts/` | Browser/corpus preparation, evaluation and Windows packaging |
+| `windows/` | Portable server and one-click launcher |
+| `test/` | Retrieval, citation, model-cache and packaging/server tests |
+| `data/` | Generated corpus inputs/artifacts; ignored by Git |
+| `offline/` | Complete generated website; ignored by Git |
+| `dist/` | Generated Windows release assets; ignored by Git |
 
-```javascript
-// Embedding Model Configuration.
-const MODEL_RUNTIME = 'transformersjs';
-const MODEL_URL = 'Xenova/all-MiniLM-L6-v2';
-const SEQ_LENGTH = 128;
-const EMBEDDING_MODEL_CONFIG = {
-  runtime: MODEL_RUNTIME,
-  url: MODEL_URL,
-  sequenceLength: SEQ_LENGTH
-};
+## Limits and attribution
 
-// Instantiate VectorSearch Master Class.
-const VECTOR_SEARCH = new VectorSearch(EMBEDDING_MODEL_CONFIG);
-```
+Model output can be wrong; citations do not establish factual correctness.
+The three targeted relevance checks are not a comprehensive search benchmark.
+Existing automated tests and software-WebGPU smoke tests do not establish
+performance on every student's GPU.
 
-```javascript
-// Embedding Model Configuration.
-const MODEL_RUNTIME = 'transformersjs';
-const MODEL_URL = 'Snowflake/snowflake-arctic-embed-s';
-const SEQ_LENGTH = 512;
-const EMBEDDING_MODEL_CONFIG = {
-  runtime: MODEL_RUNTIME,
-  url: MODEL_URL,
-  sequenceLength: SEQ_LENGTH
-};
-
-// Instantiate VectorSearch Master Class.
-const VECTOR_SEARCH = new VectorSearch(EMBEDDING_MODEL_CONFIG);
-```
-
-Note that the tokenizer is not specified for these embedding models as Transformers.js will use its own.
-
-However please note these smaller embedding models are faster for a few reasons:
-
-1. The input text to be embedded can only be up to 128 or 512 tokens vs EmbeddingGemma's 1024 tokens.
-2. The vector embedding produced has 384 dimensions vs EmbeddingGemma's 786 dimensions.
-
-### LiteRT.js Wasm files (optional self host)
-
-See the demo folder in this repo that contains a "wasm" sub folder with all the Web Assembly files needed for the LiteRT.js runtime. You can choose to serve these files yourself and update the config object if you do so but remember to enable CORS headers on your server so the files can be used if you do that. If you are curious to learn more about these files see the [official LiteRT.js documentation](https://ai.google.dev/edge/litert/web).
-
-By default the library pulls in these Wasm files from JSDeliver CDN. 
-
-If your hosted version is not in the same location update the config object to specify the new Wasm folder location on your webserver as follows:
-
-```javascript
-// Embedding Model Configuration.
-const MODEL_RUNTIME = 'litertjs';
-const MODEL_URL = 'model/embeddinggemma-300M_seq1024_mixed-precision.tflite';
-const SEQ_LENGTH = 1024;
-const TOKENIZER = 'onnx-community/embeddinggemma-300m-ONNX';
-const EMBEDDING_MODEL_CONFIG = {
-  runtime: MODEL_RUNTIME,
-  litertjsWasmUrl: '/wasm', // Specify your path to your custom hosted Wasm files here!
-  url: MODEL_URL,
-  sequenceLength: SEQ_LENGTH,
-  tokenizer: TOKENIZER
-};
-
-// Instantiate VectorSearch Master Class.
-const VECTOR_SEARCH = new VectorSearch(EMBEDDING_MODEL_CONFIG);
-```
-
-Note when you call load you can also optionally specify a HTML element to render loading status updates to like this:
-
-```javascript
-await VECTOR_SEARCH.load(STATUS_EL);
-```
-
-## Shoutouts
-
-This project was made by [Jason Mayes](https://www.linkedin.com/in/webai), and is possible by combining 3 amazing Web AI (client side AI) libraries and runtimes. 
-
-Huge Kudos to:
-
-1. [LiteRT.js](https://ai.google.dev/edge/litert/web/get_started) for the running of Google's EmbeddingGemma model.
-2. [Transformers.js](https://huggingface.co/docs/transformers.js/en/index) for the running of the tokenizer.
-3. [TensorFlow.js](https://www.tensorflow.org/js) for the WebGPU accelerated mathematics (yes Machine Learning libraries can be used to do Maths!) along with the pre/post processing of any Tensors that go into or come out of LiteRT.js for speed.
+The application code is Apache-2.0; retain [LICENSE](LICENSE), [NOTICE](NOTICE) and
+original source notices. Kubernetes documentation is by Kubernetes Authors under
+CC BY 4.0. EmbeddingGemma uses the [Gemma terms](https://ai.google.dev/gemma/terms);
+Gemma 4 and LiteRT-LM use Apache-2.0. Prepared releases contain component license
+notices; the Python runtime includes its own license. These third-party assets
+are not all relicensed under the application's license.

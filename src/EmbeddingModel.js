@@ -1,33 +1,44 @@
-import FileProxyCache from 'https://cdn.jsdelivr.net/gh/jasonmayes/web-ai-model-proxy-cache@main/FileProxyCache.min.js';
-import * as LiteRT from 'https://cdn.jsdelivr.net/npm/@litertjs/core@0.2.1/+esm';
-import * as LiteRTInterop from 'https://cdn.jsdelivr.net/npm/@litertjs/tfjs-interop@1.0.1/+esm';
-import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
-
 /**
- * A class to handle loading and using the EmbeddingGemma model with LiteRT.
+ * Loads query embedding models with Transformers.js.
  * Coded by Jason Mayes 2026.
+ * Modified for kubernetes-webai-rag: pinned offline ONNX EmbeddingGemma support.
  */
 export class EmbeddingModel {
-  constructor(modelRuntime) {
+  constructor(modelRuntime, modelConfig = {}) {
     this.model = undefined;
     this.runtime = modelRuntime;
+    this.modelConfig = modelConfig;
   }
 
   /**
-   * Loads and compiles the LiteRT model.
-   * @param {string} modelUrl URL to the .tflite model file.
+   * Loads a Transformers.js embedding model.
+   * @param {string} modelUrl Model repository identifier.
+   * @param {string} [revision='main'] Transformers.js model revision.
    * @return {Promise<void>}
    */
-  async load(modelUrl) {   
-    if (this.runtime === 'litertjs') {
-      let dataUrl = await FileProxyCache.loadFromURL(modelUrl);
-      this.model = await LiteRT.loadAndCompile(dataUrl, {
-        accelerator: 'webgpu',
+  async load(modelUrl, revision = 'main') {
+    const { AutoModel, AutoTokenizer, env, pipeline } = await import('@huggingface/transformers');
+    if (this.runtime === 'embeddinggemma') {
+      if (this.modelConfig.offline) {
+        env.allowRemoteModels = false;
+        env.allowLocalModels = true;
+        // Metadata probing requires a same-origin path rather than an absolute HTTP URL.
+        env.localModelPath = new URL(`models/${revision}/`, this.modelConfig.assetBaseUrl).pathname;
+        env.backends.onnx.wasm.wasmPaths = new URL('vendor/onnx/', this.modelConfig.assetBaseUrl).href;
+        env.backends.onnx.wasm.numThreads = 1;
+      }
+      const local = this.modelConfig.offline ? { local_files_only: true } : {};
+      this.gemmaTokenizer = await AutoTokenizer.from_pretrained(modelUrl, { revision, ...local });
+      this.model = await AutoModel.from_pretrained(modelUrl, {
+        revision,
+        dtype: this.modelConfig.dtype || 'q4',
+        ...local,
+        device: 'webgpu'
       });
     } else {
       // Transformers.js model.
       // Load the feature-extraction pipeline (Transformers.js does its own caching).
-      this.model = await pipeline('feature-extraction', modelUrl);
+      this.model = await pipeline('feature-extraction', modelUrl, { revision });
     }
   }
 
@@ -68,53 +79,24 @@ export class EmbeddingModel {
 
   /**
    * Generates an embedding for the given tokens.
-   * @param {Array<number>} tokens Array of token IDs.
-   * @param {number} seqLength Expected sequence length for the model.
-   * @param {string|Object} [taskType='query'] The task type or task options.
-   * @param {Object} [tokenizer=null] Optional tokenizer.
-   * @param {string} [rawText=null] Optional raw text.
-   * @return {Promise<{embedding: tf.Tensor, tokens: Array<number>}>} The generated embedding tensor.
-   */
-  async getEmbeddingLiteRTJS(tokens, seqLength, taskType = 'query', tokenizer = null, rawText = null) {
-    if (!this.model) {
-      throw new Error('Model not loaded. Call load() first.');
-    }
-    
-    if (this.runtime === 'litertjs') {
-      let finalTokens = tokens;
-      if (tokenizer && rawText !== null) {
-        const prefix = this.getTaskPrefix(taskType);
-        finalTokens = await tokenizer.encode(prefix + rawText);
-      }
-
-      let inputTensor = tf.tensor1d(finalTokens, 'int32');
-    
-      // Ensure to fill to expected model token length else trim.
-      if (finalTokens.length < seqLength) {
-        inputTensor = inputTensor.pad([[0, seqLength - finalTokens.length]]);
-      } else if (finalTokens.length > seqLength) {
-        inputTensor = inputTensor.slice([0], [seqLength]);
-      }
-    
-      const EXPANDED_INPUT = inputTensor.expandDims(0);
-      const RESULTS = LiteRTInterop.runWithTfjsTensors(this.model, EXPANDED_INPUT);
-
-      inputTensor.dispose();
-      EXPANDED_INPUT.dispose();
-      return {
-        embedding: RESULTS[0], // Returns batch of 1.
-        tokens: finalTokens
-      };
-    }
-  }
-
-  /**
-   * Generates an embedding for the given tokens.
    * @param {string|Array<string>} textBatch Text or array of text to embed.
    * @param {string|Object} [taskType='query'] The task type or task options.
    * @return {Promise<{embedding: Array<number>}>} The generated embedding.
    */
   async getEmbeddingTransformers(textBatch, taskType = 'query') {
+    if (this.runtime === 'embeddinggemma') {
+      const prefix = this.getTaskPrefix(taskType);
+      const texts = Array.isArray(textBatch) ? textBatch.map(text => prefix + text) : prefix + textBatch;
+      const inputs = await this.gemmaTokenizer(texts, {
+        padding: true, truncation: true, max_length: this.modelConfig.sequenceLength || 512
+      });
+      const output = await this.model(inputs);
+      try {
+        return { embedding: Array.from(output.sentence_embedding.data) };
+      } finally {
+        for (const tensor of Object.values(output)) tensor.dispose?.();
+      }
+    }
     if (this.runtime === 'transformersjs') {
       const prefix = this.getTaskPrefix(taskType);
       let formattedBatch;

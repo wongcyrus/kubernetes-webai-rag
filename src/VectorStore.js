@@ -1,6 +1,7 @@
 /********************************************************************* 
  * A simple vector store using IndexedDB for persistence.
  * Coded by Jason Mayes 2026. 
+ * Modified for kubernetes-webai-rag: preserve source citations in stored records.
  *--------------------------------------------------------------------
  * Connect with me on social if aquestions or comments:
  *
@@ -63,9 +64,8 @@ export class VectorStore {
 
 
   /**
-   * Stores an embedding and its associated text.
-   * @param {!Array<number>} embedding The vector embedding.
-   * @param {string} text The original text data.
+   * Stores embeddings, text, and optional source citations.
+   * @param {!Array<{embedding: Array<number>, text: string, sourceUrl: string=, title: string=}>} items
    * @return {!Promise<void>}
    */
   async storeBatch(items) {
@@ -81,7 +81,9 @@ export class VectorStore {
         // item.embedding should be a Float32Array for max speed
         store.add({
           text: item.text,
-          embedding: item.embedding
+          embedding: item.embedding,
+          ...(item.sourceUrl !== undefined ? { sourceUrl: item.sourceUrl } : {}),
+          ...(item.title !== undefined ? { title: item.title } : {})
         });
       }
     });
@@ -129,6 +131,17 @@ export class VectorStore {
    * @return {!Promise<string>}
    */
   async getTextByID(id) {
+    const document = await this.getDocumentByID(id);
+    return document ? document.text : null;
+  }
+
+
+  /**
+   * Fetches text and optional source citations without returning the embedding.
+   * @param {number} id
+   * @return {!Promise<?{text: string, sourceUrl: string=, title: string=}>}
+   */
+  async getDocumentByID(id) {
     const db = await this.initDb();
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(['embeddings'], 'readonly');
@@ -136,8 +149,12 @@ export class VectorStore {
       const request = store.get(id);
 
       request.onsuccess = () => {
-        // Just return the text property
-        resolve(request.result ? request.result.text : null);
+        const item = request.result;
+        resolve(item ? {
+          text: item.text,
+          ...(item.sourceUrl !== undefined ? { sourceUrl: item.sourceUrl } : {}),
+          ...(item.title !== undefined ? { title: item.title } : {})
+        } : null);
       };
       request.onerror = (e) => reject(e.target.error);
     });

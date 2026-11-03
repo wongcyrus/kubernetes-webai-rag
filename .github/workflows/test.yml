@@ -1,0 +1,43 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: python -m unittest discover -s test -p "*_test.py"
+      - name: Check official portable Python on Windows
+        if: runner.os == 'Windows'
+        shell: python
+        run: |
+          import importlib.util, pathlib, subprocess, zipfile
+          spec = importlib.util.spec_from_file_location("packager", "scripts/package-windows.py")
+          packager = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(packager)
+          archive = packager.python_runtime(pathlib.Path(".cache"))
+          target = pathlib.Path(".cache/windows-python").resolve()
+          with zipfile.ZipFile(archive) as source:
+              source.extractall(target)
+          subprocess.run([str(target / "python.exe"), "-c",
+                          "import http.server, ssl, threading, webbrowser; print('Portable Python ready')"],
+                         check=True)

@@ -1,14 +1,36 @@
 {
-  "name": "VectorSearch",
-  "version": "1.0.0",
-  "description": "Client side Vector Search",
-  "main": "index.html",
+  "name": "kubernetes-webai-rag",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Offline Kubernetes RAG powered by Gemma 4, LiteRT-LM and browser WebGPU",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wongcyrus/kubernetes-webai-rag.git"
+  },
   "scripts": {
-    "build": "npx esbuild ./src/VectorSearch.js --bundle --minify --format=esm --outfile=./VectorSearch-min.js --external:https://* --external:http://*",
-    "demo": "npx http-server demo --cors -c-1"
+    "build": "node scripts/build-browser.mjs",
+    "build:kubernetes": "node scripts/build-kubernetes.mjs",
+    "test": "node --experimental-vm-modules --test",
+    "test:retrieval": "node scripts/evaluate-kubernetes.mjs",
+    "prepare:offline": "node scripts/prepare-offline.mjs",
+    "start": "http-server offline -a 127.0.0.1 -p 8080 -c-1 -o /kubernetes.html",
+    "demo": "npm start --",
+    "package:windows": "python3 scripts/package-windows.py",
+    "test:windows": "python3 -m unittest discover -s test -p '*_test.py'"
   },
   "devDependencies": {
+    "@huggingface/transformers": "4.3.2",
+    "@litert-lm/core": "0.15.0",
+    "@tensorflow/tfjs": "4.22.0",
+    "@tensorflow/tfjs-backend-webgpu": "4.22.0",
     "esbuild": "^0.25.0",
-    "http-server": "^14.1.1"
+    "http-server": "^14.1.1",
+    "linkedom": "^0.18.12"
+  },
+  "overrides": {
+    "protobufjs": "^7.6.3",
+    "sharp": "^0.35.5"
   }
 }

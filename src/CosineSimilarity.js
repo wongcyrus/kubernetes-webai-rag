@@ -1,6 +1,9 @@
+import * as tf from '@tensorflow/tfjs';
+
 /**
  * A class to handle cosine similarity calculations using Google's TensorFlow.js.
  * Coded by Jason Mayes 2026.
+ * Modified for kubernetes-webai-rag: normalized prebuilt matrix loading and search.
  */
 export class CosineSimilarity {
   constructor() {
@@ -14,6 +17,39 @@ export class CosineSimilarity {
     if (this.cachedMatrix) {
       this.cachedMatrix.dispose();
       this.cachedMatrix = undefined;
+    }
+  }
+
+  /**
+   * Loads an offline-normalized matrix and warms up the search backend.
+   */
+  async loadPrebuiltMatrix(vectors, count, dimensions) {
+    await this.deleteGPUVectorCache();
+    this.cachedMatrix = tf.tensor2d(vectors, [count, dimensions]);
+    const warmup = tf.tidy(() => tf.matMul(this.cachedMatrix, tf.zeros([dimensions, 1])));
+    try {
+      await warmup.data();
+    } finally {
+      warmup.dispose();
+    }
+  }
+
+  /**
+   * Searches a prebuilt normalized matrix without normalizing document vectors.
+   */
+  async cosineSimilarityPrebuilt(queryVector, topK) {
+    const top = tf.tidy(() => {
+      const query = tf.tensor1d(queryVector);
+      const normalizedQuery = query.div(query.norm().add(1e-9));
+      const scores = tf.matMul(this.cachedMatrix, normalizedQuery.reshape([-1, 1])).reshape([-1]);
+      return tf.topk(scores, topK, true);
+    });
+    try {
+      const [values, indices] = await Promise.all([top.values.data(), top.indices.data()]);
+      return { values, indices };
+    } finally {
+      top.values.dispose();
+      top.indices.dispose();
     }
   }
 

@@ -1,0 +1,16 @@
+kubernetes-webai-rag
+
+Derived from VectorSearch.js by Jason Mayes (2026):
+https://github.com/jasonmayes/VectorSearch.js
+The original Apache-2.0 license and authorship notices are retained.
+
+Modifications include offline Kubernetes corpus preparation, source heading
+citations, hybrid retrieval, local documentation, Gemma 4 answer generation,
+persistent model caching, and Windows distribution.
+
+This is an independent application, not an official Kubernetes, Google or
+VectorSearch.js release. Kubernetes documentation is licensed under CC BY 4.0.
+EmbeddingGemma weights use the Gemma terms. Gemma 4 and LiteRT-LM use Apache-2.0.
+Distributable packages include component licenses in app/licenses and the
+Python runtime's LICENSE.txt. These assets are not all covered by this
+repository's Apache-2.0 license.

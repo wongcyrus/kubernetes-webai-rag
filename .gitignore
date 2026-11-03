@@ -1,0 +1,11 @@
+node_modules/
+data/
+offline/
+dist/
+.cache/
+__pycache__/
+*.pyc
+*.key
+*.crt
+*.csr
+*.srl
