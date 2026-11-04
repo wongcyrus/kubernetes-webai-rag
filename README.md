@@ -11,13 +11,29 @@ caching. It is not the upstream library's general-purpose demo.
 
 ## Windows 11: student installation
 
-Download `Setup-RAG.cmd` from the project's release and run it **before the exam**.
-It downloads the two release archives, verifies their SHA-256 checksums, and
-extracts them into `kubernetes-webai-rag/`. Alternatively, download both archives
-and extract both into the same directory.
+**A Git clone or GitHub "Source code" ZIP is not the student installation.**
+It does not include portable Python, the prepared documentation index or model
+weights. `windows/Start-RAG.cmd` in the source tree is a packaging input, not a
+ready-to-run application.
 
-Double-click `kubernetes-webai-rag/Start-RAG.cmd`. The included, unmodified
-Windows x64 embeddable Python runtime serves `app/` on `127.0.0.1:8080` and opens:
+1. Download [Setup-RAG.cmd](https://github.com/wongcyrus/kubernetes-webai-rag/releases/download/v0.1.0/Setup-RAG.cmd)
+   from the [v0.1.0 release](https://github.com/wongcyrus/kubernetes-webai-rag/releases/tag/v0.1.0).
+   Save it in a separate installation folder, for example `D:\working\rag-install`.
+2. Run `Setup-RAG.cmd` **before the exam**, with internet access. It downloads both
+   release archives, verifies their SHA-256 checksums and extracts them. Wait for
+   the `Ready` message; do not run the source-tree launcher instead.
+3. Double-click `D:\working\rag-install\kubernetes-webai-rag\Start-RAG.cmd`.
+   In this installed folder, `runtime\python.exe`, `serve.py` and `app\` must also
+   exist.
+
+For manual installation, download `kubernetes-webai-rag-0.1.0-windows-x64-app.zip`
+and `kubernetes-webai-rag-0.1.0-windows-x64-model.zip` from the release assets.
+Fully extract **both** into the same parent directory so their
+`kubernetes-webai-rag/` folders merge. Do not choose the "Source code" downloads
+or run the launcher directly inside a ZIP.
+
+The release application archive includes the unmodified Windows x64 embeddable
+Python runtime. Its launcher serves `app/` on `127.0.0.1:8080` and opens:
 
 **http://localhost:8080/kubernetes.html**
 
