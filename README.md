@@ -58,6 +58,124 @@ the cached model, then repeat with internet disconnected. Keep the tab open to
 retain the loaded GPU engine. Native Windows GPU/launcher acceptance testing is
 required before treating a release as exam-ready.
 
+## Architecture design
+
+The application has two separate phases: **prepare once on the maintainer's
+computer**, then **run independently on every student's computer**. Python only
+serves local files; retrieval and answer generation run in the student's browser.
+There is no cloud inference service or shared AI backend.
+
+**Version note:** this architecture describes the current source on `main`.
+The published `v0.1.0` Windows archives predate the two-panel chat, Markdown
+rendering and Copy code features. Updating source does not update those archives.
+
+### 1. Offline preparation and distribution
+
+```mermaid
+flowchart LR
+  Source["Kubernetes print view<br/>and English sitemap"] --> Builder["Heading-aware chunks<br/>CPU EmbeddingGemma embeddings"]
+  Builder --> Index["Prebuilt dataset<br/>Vectors, chunks and BM25 postings"]
+  Source --> Mirror["Local documentation<br/>Pages, assets and heading anchors"]
+  Index --> Prepare["Prepare offline website<br/>Bundle JS, WASM and licenses"]
+  Mirror --> Prepare
+  Models["Pinned models and runtimes<br/>EmbeddingGemma and Gemma 4 E2B"] --> Prepare
+  Models -->|EmbeddingGemma| Builder
+  Prepare --> Package["Windows release archives<br/>Portable Python and SHA-256 checksums"]
+  Package --> Share["Extract the complete folder once<br/>Share by USB or school storage"]
+
+  classDef data fill:#e8f0fe,stroke:#4285f4,color:#174ea6;
+  classDef compute fill:#e6f4ea,stroke:#34a853,color:#137333;
+  classDef delivery fill:#fef7e0,stroke:#fbbc04,color:#7a5900;
+  class Source,Index,Mirror data;
+  class Builder,Models,Prepare compute;
+  class Package,Share delivery;
+```
+
+[`scripts/build-kubernetes.mjs`](scripts/build-kubernetes.mjs) creates the corpus
+once: **16,483 chunks with 768-dimensional normalized float32 vectors**, plus
+keyword postings and canonical source anchors. It supports checkpoints and
+resume. [`scripts/prepare-offline.mjs`](scripts/prepare-offline.mjs) mirrors the
+matching documentation snapshot and collects local models, runtimes and licenses.
+
+The packager adds the official portable Windows Python runtime. Students receive
+the same completed dataset and models; they do not build an index or install npm.
+The entire extracted `kubernetes-webai-rag/` folder can be copied to an SSD or USB.
+Local SSD use is recommended for faster first loading. Model weights and generated
+datasets stay outside Git.
+
+### 2. Runtime on each student's computer
+
+```mermaid
+flowchart TB
+  Folder["Installed application folder<br/>Website, dataset, documentation and models"] --> Server["Portable Python static server<br/>http://localhost:8080"]
+
+  subgraph Browser["Student's browser - local WebGPU"]
+    History["Completed chat turns<br/>In-memory context"] --> Query["Current question<br/>plus recent questions"]
+    Query --> Embedding["EmbeddingGemma<br/>Transformers.js / ONNX"]
+    Embedding --> Semantic["Cosine similarity<br/>Prebuilt vectors in memory"]
+    Query --> Keyword["BM25 keyword search<br/>Prebuilt postings"]
+    Semantic --> Hybrid["Hybrid rank fusion<br/>Heading-aware, diverse pages"]
+    Keyword --> Hybrid
+    Hybrid --> Sources["Source snapshot for this turn<br/>Passages and local heading URLs"]
+    Sources --> Prompt["Grounded prompt<br/>Bounded history and excerpts"]
+    History --> Prompt
+    Prompt --> Gemma["Gemma 4 E2B<br/>LiteRT-LM / WebGPU"]
+    Gemma -->|Streamed answer| Chat["Chat panel<br/>markdown-it and Copy code"]
+    Chat --> History
+    Chat -->|Citation click| Reader["Documentation panel<br/>Sandboxed local reader"]
+    Sources -->|Per-turn citation mapping| Reader
+    Cache["OPFS browser disk cache<br/>Pinned Gemma model"] -->|Complete cached model| Gemma
+  end
+
+  Server -->|Dataset files| Semantic
+  Server -->|Keyword postings| Keyword
+  Server -->|Query model and runtime| Embedding
+  Server -->|Gemma model on first load| Cache
+  Server -->|Local HTML and assets| Reader
+
+  classDef data fill:#e8f0fe,stroke:#4285f4,color:#174ea6;
+  classDef compute fill:#e6f4ea,stroke:#34a853,color:#137333;
+  classDef interface fill:#fef7e0,stroke:#fbbc04,color:#7a5900;
+  classDef serving fill:#fce8e6,stroke:#ea4335,color:#a50e0e;
+  class Folder,History,Sources,Cache data;
+  class Embedding,Semantic,Keyword,Hybrid,Prompt,Gemma compute;
+  class Query,Chat,Reader interface;
+  class Server serving;
+```
+
+| Component | Responsibility |
+|---|---|
+| [Portable server](windows/serve.py) | Serve files on localhost; no model inference or chat storage. |
+| [Chat workspace](web/js/kubernetes.js) | Keep turns in the tab, retrieve fresh sources per question, and select documents for each answer. |
+| [Retrieval](src/VectorSearch.js) | Search the prebuilt matrix using a question embedding; never embed the corpus during startup. |
+| [Hybrid ranking](src/KeywordSearch.js) | Combine semantic and BM25 rankings using reciprocal rank fusion, grouping headings and preferring distinct pages. |
+| [Answer generator](src/OfflineAnswerGenerator.js) | Reuse the loaded Gemma engine, build bounded grounded prompts, stream answers and support cancellation. |
+| [Answer renderer](web/js/answer-citations.js) | Format Markdown, copy code, and bind citations only to that answer's retrieved sources. |
+
+**Conversation and context.** Retrieval includes up to two recent completed user
+questions. Generation uses up to four recent completed messages, with each
+history excerpt capped at 400 UTF-8 bytes. The complete user prompt is capped at
+6,000 UTF-8 bytes, conservatively reserving room for instructions and output
+within the engine's 8,192-token context; answers are limited to 512 output tokens.
+Each turn gets a fresh native conversation, so old passages do not accumulate in
+the engine. Stopped or failed answers remain visible but are excluded from future
+context. New chat clears the transcript without unloading models.
+
+**Storage and loading.** The static corpus and loaded models are used in browser
+memory. Gemma's complete model download is committed atomically to OPFS and reused
+on refresh when its pinned cache entry has the expected size. If browser storage
+is unavailable or insufficient, loading falls back to the local server. This cache
+belongs to one browser profile and origin; copying the application folder does
+not copy it. Refresh clears chat and reinitializes the GPU, but does not normally
+transfer an already cached Gemma model again.
+
+**Citations and isolation.** Every turn retains its own source list: an older
+answer's `[1]` never becomes the latest answer's `[1]`. Citations open mirrored
+documentation at the original heading anchor in the right panel. Model-generated
+HTML, arbitrary links and images are disabled; the reader is sandboxed and the
+documentation has scripts disabled. All runtime assets are same-origin, and the
+application CSP blocks external connections.
+
 ## What stays local
 
 - The workspace has a chat panel and a local documentation panel. Follow-up
