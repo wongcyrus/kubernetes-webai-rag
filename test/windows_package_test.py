@@ -93,6 +93,40 @@ class WindowsPackageTests(unittest.TestCase):
             instance.server_close()
             thread.join()
 
+    def test_server_reloads_updated_ui_with_identical_archive_timestamps(self):
+        page = self.root / "kubernetes.html"
+        timestamp = 1767225600
+        os.utime(page, (timestamp, timestamp))
+        handler = functools.partial(server.Handler, directory=str(self.root), release=self.release)
+        instance = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        thread = threading.Thread(target=instance.serve_forever)
+        thread.start()
+        try:
+            url = f"http://127.0.0.1:{instance.server_port}/kubernetes.html"
+            with urllib.request.urlopen(url, timeout=5) as response:
+                modified = response.headers["Last-Modified"]
+                self.assertEqual(response.read(), b"ok")
+            page.write_bytes(b"updated chat UI")
+            os.utime(page, (timestamp, timestamp))
+            request = urllib.request.Request(url, headers={"If-Modified-Since": modified})
+            with urllib.request.urlopen(request, timeout=5) as response:
+                self.assertEqual(response.status, 200)
+                self.assertEqual(response.read(), b"updated chat UI")
+            model_url = f"http://127.0.0.1:{instance.server_port}/models/gemma/model.litertlm"
+            with urllib.request.urlopen(model_url, timeout=5) as response:
+                model_modified = response.headers["Last-Modified"]
+                self.assertIn("immutable", response.headers["Cache-Control"])
+                response.read()
+            model_request = urllib.request.Request(model_url, headers={"If-Modified-Since": model_modified})
+            with self.assertRaises(urllib.error.HTTPError) as unchanged:
+                urllib.request.urlopen(model_request, timeout=5)
+            self.assertEqual(unchanged.exception.code, 304)
+            unchanged.exception.close()
+        finally:
+            instance.shutdown()
+            instance.server_close()
+            thread.join()
+
     def test_release_separates_model_and_excludes_development_files(self):
         (self.root / "local-test-ca.crt").write_text("public test certificate")
         (self.root / "private.key").write_text("not a real key")
