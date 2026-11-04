@@ -2,10 +2,12 @@ const assert = require('node:assert/strict');
 const { readFile } = require('node:fs/promises');
 const test = require('node:test');
 const vm = require('node:vm');
+const MarkdownIt = require('markdown-it');
 const { dirname, resolve } = require('node:path');
 
 async function loadClass(path, name, dependencies = {}, globals = {}) {
-  const context = vm.createContext({ URL, ...globals });
+  dependencies = { 'markdown-it': { default: MarkdownIt }, ...dependencies };
+  const context = vm.createContext({ URL, TextEncoder, ...globals });
   const module = new vm.SourceTextModule(await readFile(path, 'utf8'), {
     context,
     importModuleDynamically: async specifier => {
@@ -412,7 +414,61 @@ test('Gemma 4 streams grounded answers from local assets using a fresh conversat
   assert.match(prompts[0], /\[1\] Creating a Deployment\nCreate a Deployment\./);
   assert.doesNotMatch(prompts[1], /First question|Create a Deployment/);
   assert.deepEqual(updates, ['Use the documentation ', 'Use the documentation [1].']);
+  await generator.generate('Make it three replicas', [document], undefined, undefined, [
+    { role: 'user', content: 'First question' },
+    { role: 'assistant', content: 'Use the documentation [1].' }
+  ]);
+  assert.match(prompts[2], /user: First question/);
+  assert.match(prompts[2], /assistant: Use the documentation \(historical source 1\)/);
+  assert.equal(created, 1);
+  assert.equal(deleted, 3);
   await assert.rejects(generator.generate('Question', []), /No documentation passages/);
+});
+
+test('follow-up retrieval uses recent questions rather than generated answers', async () => {
+  const { buildRetrievalQuery } = await loadClass('src/OfflineAnswerGenerator.js', undefined, {
+    '@litert-lm/core': { Engine: {}, loadLiteRtLm() {}, SamplerType: {} }
+  });
+  const history = [
+    { role: 'user', content: 'Old unrelated question' },
+    { role: 'user', content: 'Create a Deployment with nginx' },
+    { role: 'assistant', content: 'An unsupported generated claim' },
+    { role: 'user', content: 'Expose its HTTP port' }
+  ];
+  const query = buildRetrievalQuery('Change it to three replicas', history);
+  assert.match(query, /^Change it to three replicas/);
+  assert.match(query, /Create a Deployment with nginx/);
+  assert.match(query, /Expose its HTTP port/);
+  assert.doesNotMatch(query, /Old unrelated|unsupported generated/);
+  assert.equal(buildRetrievalQuery('New problem'), 'New problem');
+});
+
+test('chat prompts bound multilingual history and passages and separate historical citations', async () => {
+  const { buildAnswerPrompt } = await loadClass('src/OfflineAnswerGenerator.js', undefined, {
+    '@litert-lm/core': { Engine: {}, loadLiteRtLm() {}, SamplerType: {} }
+  });
+  const history = [
+    { role: 'user', content: 'Forgotten old question' },
+    { role: 'assistant', content: 'Old answer' },
+    { role: 'user', content: 'Create nginx' },
+    { role: 'assistant', content: 'Apply this [1].\n```yaml\nvalues: [1]\n```' },
+    { role: 'user', content: 'Expose nginx' },
+    { role: 'assistant', content: 'Use a Service [2].' }
+  ];
+  const sources = Array.from({ length: 5 }, (_, index) => ({
+    title: `Current source ${index + 1}`, text: 'Kubernetes documentation '.repeat(200) + '中文'.repeat(200)
+  }));
+  const prompt = buildAnswerPrompt('Make it three replicas', sources, history);
+  assert.ok(new TextEncoder().encode(prompt).length <= 6000);
+  assert.doesNotMatch(prompt, /Forgotten old question|Old answer/);
+  assert.match(prompt, /historical source 1/);
+  assert.match(prompt, /```yaml\nvalues: \[1\]\n```/);
+  assert.match(prompt, /\[5\] Current source 5/);
+  const unicode = buildAnswerPrompt('請解釋 Deployment', [{ title: '中文'.repeat(100), text: '中文'.repeat(4000) }], [
+    { role: 'user', content: '中文'.repeat(2000) }
+  ]);
+  assert.ok(new TextEncoder().encode(unicode).length <= 6000);
+  assert.throws(() => buildAnswerPrompt('中文'.repeat(1000), sources), /shorten/);
 });
 
 test('Gemma 4 cleans up failed streams and can answer a later question', async () => {
@@ -556,7 +612,7 @@ test('Gemma 4 remains usable and reports unavailable, full or failed browser sto
 
 test('answer rendering creates only supplied citation links and keeps model HTML and code inert', async () => {
   const { parseHTML } = await import('linkedom');
-  const dom = parseHTML('<html><body><pre id="answer"></pre></body></html>').document;
+  const dom = parseHTML('<html><body><div id="answer"></div></body></html>').document;
   const render = await loadClass('web/js/answer-citations.js', 'renderAnswer', {}, { document: dom });
   const container = dom.getElementById('answer');
   const text = '<img src="https://outside.test/image" onerror="bad()"> Answer [1]. Unknown [99].\n```yaml\nvalues: [1]\n```';
@@ -565,5 +621,99 @@ test('answer rendering creates only supplied citation links and keeps model HTML
   assert.equal(container.querySelectorAll('a').length, 1);
   assert.equal(container.querySelector('a').getAttribute('href'), sourceUrl);
   assert.equal(container.querySelectorAll('img,script').length, 0);
-  assert.equal(container.textContent, text);
+  assert.ok(container.textContent.startsWith('<img src="https://outside.test/image" onerror="bad()"> Answer [1]. Unknown [99].'));
+  assert.equal(container.querySelector('code').textContent, 'values: [1]\n');
+  assert.equal(container.querySelector('.copy-code').textContent, 'Copy code');
+});
+
+test('code buttons copy exact YAML and shell blocks without fences or linked citations', async () => {
+  const { parseHTML } = await import('linkedom');
+  const window = parseHTML('<html><body><div id="answer"></div></body></html>');
+  const copied = [];
+  const render = await loadClass('web/js/answer-citations.js', 'renderAnswer', {}, {
+    document: window.document, navigator: { clipboard: { async writeText(text) { copied.push(text); } } }
+  });
+  const container = window.document.getElementById('answer');
+  const yaml = 'apiVersion: v1\nkind: Service\nspec:\n  selector:\n    app: my-app\n  values: [1]\n';
+  const shell = 'kubectl apply -f service.yaml\r\n';
+  const cited = render(container, `Example [1].\n\`\`\`yaml\n${yaml}\`\`\`\nThen:\n\`\`\`bash\r\n${shell}\`\`\`\nVerify [1].`, [document]);
+  assert.deepEqual(Array.from(cited), [1]);
+  const buttons = container.querySelectorAll('.copy-code');
+  assert.equal(buttons.length, 2);
+  for (const button of buttons) button.dispatchEvent(new window.Event('click'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(copied, [yaml, shell.replace(/\r\n/g, '\n')]);
+  assert.equal(buttons[0].textContent, 'Copied');
+  assert.equal(container.querySelectorAll('.answer-code a').length, 0);
+  assert.equal(container.querySelectorAll('a').length, 2);
+});
+
+test('streaming code stays inert and becomes a complete copyable block on the next render', async () => {
+  const { parseHTML } = await import('linkedom');
+  const window = parseHTML('<html><body><div id="answer"></div></body></html>');
+  const copied = [];
+  const render = await loadClass('web/js/answer-citations.js', 'renderAnswer', {}, {
+    document: window.document, navigator: { clipboard: { async writeText(text) { copied.push(text); } } }
+  });
+  const container = window.document.getElementById('answer');
+  const partial = '```html\n<script>bad()</script>\nvalues: [1]';
+  assert.equal(render(container, partial, [document]).size, 0);
+  assert.equal(container.querySelector('.copy-code').textContent, 'Copy code');
+  assert.equal(container.querySelectorAll('script,a').length, 0);
+  render(container, partial + '\n```\nReference [1].', [document]);
+  container.querySelector('.copy-code').dispatchEvent(new window.Event('click'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(copied, ['<script>bad()</script>\nvalues: [1]\n']);
+  assert.equal(container.querySelectorAll('script').length, 0);
+  assert.equal(container.querySelectorAll('.answer-code').length, 1);
+});
+
+test('denied clipboard access selects code for manual copying without claiming success', async () => {
+  const { parseHTML } = await import('linkedom');
+  const window = parseHTML('<html><body><div id="answer"></div></body></html>');
+  let selected;
+  let added = 0;
+  window.document.createRange = () => ({ selectNodeContents(node) { selected = node; } });
+  window.document.getSelection = () => ({ removeAllRanges() {}, addRange() { added++; } });
+  const render = await loadClass('web/js/answer-citations.js', 'renderAnswer', {}, {
+    document: window.document, navigator: { clipboard: { async writeText() { throw new Error('Denied'); } } }
+  });
+  const container = window.document.getElementById('answer');
+  render(container, '```yaml\n  app: nginx\n```', []);
+  container.querySelector('.copy-code').dispatchEvent(new window.Event('click'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(selected.textContent, '  app: nginx\n');
+  assert.equal(added, 1);
+  assert.equal(container.querySelector('.copy-code').textContent, 'Selected; press Ctrl+C');
+});
+
+test('Markdown formatting works while raw HTML, arbitrary links and images stay inert', async () => {
+  const { parseHTML } = await import('linkedom');
+  const window = parseHTML('<html><body><div id="answer"></div></body></html>');
+  const render = await loadClass('web/js/answer-citations.js', 'renderAnswer', {}, { document: window.document });
+  const container = window.document.getElementById('answer');
+  render(container, '**Example of creating a Service:**\n\n- Run `kubectl apply`.\n- Check [1].\n\n' +
+    '[outside](https://outside.test/) ![image](https://outside.test/image)\n' +
+    '<https://outside.test/>\n<script>bad()</script>\n\nInline `values: [1]`.', [document]);
+  assert.equal(container.querySelector('strong').textContent, 'Example of creating a Service:');
+  assert.equal(container.querySelectorAll('li').length, 2);
+  assert.equal(container.querySelectorAll('a').length, 1);
+  assert.equal(container.querySelectorAll('img,script').length, 0);
+  assert.equal(container.querySelectorAll('code a').length, 0);
+});
+test('older answer citations retain their own sources when opening the document panel', async () => {
+  const { parseHTML } = await import('linkedom');
+  const window = parseHTML('<html><body><pre id="first"></pre><pre id="second"></pre></body></html>');
+  const render = await loadClass('web/js/answer-citations.js', 'renderAnswer', {}, { document: window.document });
+  const first = window.document.getElementById('first');
+  const second = window.document.getElementById('second');
+  const other = { title: 'Egress', sourceUrl: 'http://localhost:8080/docs/concepts/services-networking/network-policies/#egress' };
+  const opened = [];
+  render(first, 'First answer [1].', [document], (source, index) => opened.push([source, index]));
+  render(second, 'Second answer [1].', [other], (source, index) => opened.push([source, index]));
+  second.querySelector('a').dispatchEvent(new window.Event('click', { cancelable: true }));
+  first.querySelector('a').dispatchEvent(new window.Event('click', { cancelable: true }));
+  assert.equal(opened[0][0], other);
+  assert.equal(opened[1][0], document);
+  assert.equal(opened[1][1], 1);
 });

@@ -1,5 +1,5 @@
 import { VectorSearch } from './VectorSearch.js';
-export { OfflineAnswerGenerator } from './OfflineAnswerGenerator.js';
+export { OfflineAnswerGenerator, buildRetrievalQuery } from './OfflineAnswerGenerator.js';
 
 export class OfflineVectorSearch extends VectorSearch {
   static async fromPrebuiltDataset(manifestUrl, statusElement) {

@@ -60,6 +60,16 @@ required before treating a release as exam-ready.
 
 ## What stays local
 
+- The workspace has a chat panel and a local documentation panel. Follow-up
+  questions use recent completed turns as context and retrieve fresh sources.
+  Each answer keeps its own citations; selecting an older answer restores its
+  documents. New chat clears messages without unloading the models.
+- Answers are formatted with locally bundled markdown-it. YAML and command
+  blocks have Copy code buttons. Raw HTML and arbitrary links/images are disabled;
+  clickable citations come only from retrieved documentation.
+- Chat is held only in the current tab, not saved to disk. Refresh clears the
+  conversation but preserves the browser model cache. History and documentation
+  excerpts are bounded to fit the local model context.
 - The same prebuilt index is distributed to every student. No documentation
   embedding or IndexedDB corpus import happens on page load.
 - EmbeddingGemma embeds only the question. Semantic similarity and offline BM25

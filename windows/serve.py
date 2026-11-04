@@ -42,6 +42,12 @@ class Handler(SimpleHTTPRequestHandler):
         self.release = release
         super().__init__(*args, **kwargs)
 
+    def handle(self):
+        try:
+            super().handle()
+        except (ConnectionResetError, BrokenPipeError):
+            pass
+
     def do_GET(self):
         if urlsplit(self.path).path == "/healthz":
             body = json.dumps(self.release).encode()

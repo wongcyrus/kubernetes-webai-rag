@@ -11,27 +11,46 @@
     <div id="container">
       <header>
         <h1>Kubernetes WebAI RAG</h1>
-        <p>Gemma 4 E2B answers using locally retrieved Kubernetes documentation.
-          Everything runs in your browser; the documentation index is already built.</p>
-      </header>
-      <div class="card">
-        <form id="search-form" class="input-group-vertical">
-          <div class="input-wrapper">
-            <label for="query">Kubernetes question</label>
-            <input id="query" type="text" value="How do I create a Deployment?" maxlength="2000" required>
-          </div>
-          <button id="search-button" type="submit" disabled>Generate answer</button>
-          <button id="stop-button" type="button" hidden>Stop generation</button>
-        </form>
+        <p>Offline troubleshooting with Gemma 4 E2B and prebuilt Kubernetes documentation.</p>
         <p id="status" class="status" role="status">Loading the prebuilt dataset and query model...</p>
-        <section id="answer" hidden>
-          <h2>Gemma 4 answer</h2>
-          <pre id="answer-text" style="white-space:pre-wrap;overflow-wrap:anywhere" aria-live="polite"></pre>
-        </section>
-        <h2>Retrieved documentation</h2>
-        <div id="results"></div>
+      </header>
+      <div class="mobile-tabs" role="group" aria-label="Workspace panel">
+        <button id="chat-tab" type="button" aria-pressed="true">Chat</button>
+        <button id="documents-tab" type="button" aria-pressed="false">Documents</button>
       </div>
+      <main id="workspace" data-panel="chat">
+        <section id="chat-panel" class="panel" aria-labelledby="chat-heading">
+          <div class="panel-heading">
+            <h2 id="chat-heading">Chat</h2>
+            <button id="new-chat" class="secondary" type="button" disabled>New chat</button>
+          </div>
+          <div id="chat-history" tabindex="0" aria-label="Conversation">
+            <p id="chat-empty" class="empty-state">Ask a Kubernetes question, then follow up to solve the same problem.
+              Start a new chat for a different problem.</p>
+          </div>
+          <form id="search-form">
+            <label for="query">Your message</label>
+            <textarea id="query" rows="3" maxlength="2000" placeholder="How do I create a Deployment?" required></textarea>
+            <div class="composer-actions">
+              <span class="subtitle">Enter to send; Shift+Enter for a new line. Recent turns provide context.</span>
+              <button id="search-button" type="submit" disabled>Send</button>
+              <button id="stop-button" class="secondary" type="button" hidden>Stop</button>
+            </div>
+          </form>
+        </section>
+        <section id="documents-panel" class="panel" aria-labelledby="documents-heading">
+          <div class="panel-heading">
+            <h2 id="documents-heading">Documentation</h2>
+            <a id="open-document" href="docs/" target="_blank" rel="noopener noreferrer">Open in new tab</a>
+          </div>
+          <p id="source-context" class="subtitle">Sources will appear after your first question.</p>
+          <div id="results"></div>
+          <p id="document-empty" class="empty-state">Select a source or an answer citation to read its local documentation here.</p>
+          <iframe id="document-reader" title="Offline Kubernetes documentation" sandbox="allow-same-origin allow-downloads" hidden></iframe>
+        </section>
+      </main>
       <p class="subtitle">Generated answers can be wrong. Check their source citations.
+        Answers use bounded history and documentation excerpts. Chat is kept only in this tab; refreshing clears it.
         Documentation by Kubernetes Authors, licensed under CC BY 4.0.
         <a href="docs/">Read the offline documentation.</a></p>
     </div>

@@ -10,6 +10,7 @@ import unittest
 import urllib.request
 import zipfile
 from http.server import ThreadingHTTPServer
+from http.client import IncompleteRead
 from pathlib import Path
 from unittest.mock import patch
 
@@ -129,6 +130,34 @@ class WindowsPackageTests(unittest.TestCase):
             subprocess.run(["cmd.exe", "/d", "/c", "Setup-RAG.cmd"],
                            cwd=output, input="\r\n", text=True, timeout=30, check=True)
             server.check_package(output / "kubernetes-webai-rag/app")
+
+    def test_server_suppresses_disconnected_downloads_and_keeps_serving(self):
+        handler = functools.partial(server.Handler, directory=str(self.root), release=self.release)
+        instance = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        thread = threading.Thread(target=instance.serve_forever)
+        with patch.object(instance, "handle_error") as handle_error, patch.object(
+            server.Handler, "copyfile", side_effect=[ConnectionResetError(), BrokenPipeError()]
+        ):
+            thread.start()
+            try:
+                base = f"http://127.0.0.1:{instance.server_port}"
+                for _ in range(2):
+                    with urllib.request.urlopen(base + "/vendor/runtime.wasm", timeout=5) as response:
+                        with self.assertRaises(IncompleteRead):
+                            response.read()
+                with urllib.request.urlopen(base + "/healthz", timeout=5) as response:
+                    self.assertEqual(json.load(response)["application"], "kubernetes-webai-rag")
+                handle_error.assert_not_called()
+            finally:
+                instance.shutdown()
+                instance.server_close()
+                thread.join()
+
+    def test_server_does_not_hide_unexpected_errors(self):
+        handler = object.__new__(server.Handler)
+        with patch.object(server.SimpleHTTPRequestHandler, "handle", side_effect=OSError("unexpected failure")):
+            with self.assertRaisesRegex(OSError, "unexpected failure"):
+                handler.handle()
 
     def test_packager_refuses_changed_model_partial_data_and_oversized_assets(self):
         self.manifest["partial"] = True

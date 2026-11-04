@@ -27,7 +27,8 @@
     "@tensorflow/tfjs-backend-webgpu": "4.22.0",
     "esbuild": "^0.25.0",
     "http-server": "^14.1.1",
-    "linkedom": "^0.18.12"
+    "linkedom": "^0.18.12",
+    "markdown-it": "15.0.3"
   },
   "overrides": {
     "protobufjs": "^7.6.3",
