@@ -86,6 +86,7 @@ def finish_archive(temporary, destination):
 def setup_script(version, archives):
     base = f"https://github.com/wongcyrus/{NAME}/releases/download/v{version}"
     lines = ["@echo off", "setlocal", 'cd /d "%~dp0"',
+             f"echo Kubernetes WebAI RAG v{version} setup",
              'if not exist ".downloads" mkdir ".downloads"']
     for index, archive in enumerate(archives):
         filename = archive.name
@@ -102,6 +103,21 @@ def setup_script(version, archives):
             f'if not exist ".downloads\\{filename}" goto download_{index}',
             verify, f"if not errorlevel 1 goto ready_{index}",
             f":download_{index}",
+        ]
+        if filename.endswith("-model.zip"):
+            lines += [
+                '"%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -Command '
+                "\"$ErrorActionPreference='Stop'; $h=[Security.Cryptography.SHA256]::Create(); "
+                "try { foreach ($p in [IO.Directory]::GetFiles('.downloads','*-windows-x64-model.zip')) { "
+                "$s=[IO.File]::OpenRead($p); "
+                "try { $v=[BitConverter]::ToString($h.ComputeHash($s)).Replace('-','') } finally { $s.Dispose() }; "
+                f"if ($v -eq '{expected}') {{ "
+                f"if ([IO.File]::Exists('.downloads\\{filename}')) {{ [IO.File]::Delete('.downloads\\{filename}') }}; "
+                f"[IO.File]::Move($p,'.downloads\\{filename}'); exit 0 "
+                "} }; exit 1 } finally { $h.Dispose() }\"",
+                f"if not errorlevel 1 goto ready_{index}",
+            ]
+        lines += [
             f'"%SystemRoot%\\System32\\curl.exe" --fail --location --retry 3 --output ".downloads\\{filename}" "{base}/{filename}"',
             "if errorlevel 1 goto failed", verify, "if errorlevel 1 goto failed",
             f":ready_{index}",

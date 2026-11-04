@@ -91,7 +91,7 @@ def run(root, open_browser=True):
         print(f"Cannot use localhost port 8080: {error}")
         print("Close the other server and retry. The port is fixed to preserve the browser model cache.")
         return 1
-    print(f"Kubernetes WebAI RAG: {URL}\nKeep this window open. Press Ctrl+C to stop.")
+    print(f"Kubernetes WebAI RAG v{release['version']}: {URL}\nKeep this window open. Press Ctrl+C to stop.")
     if open_browser:
         timer = threading.Timer(0.5, webbrowser.open, args=(URL,))
         timer.daemon = True

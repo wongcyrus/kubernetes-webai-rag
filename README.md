@@ -16,8 +16,8 @@ It does not include portable Python, the prepared documentation index or model
 weights. `windows/Start-RAG.cmd` in the source tree is a packaging input, not a
 ready-to-run application.
 
-1. Download [Setup-RAG.cmd](https://github.com/wongcyrus/kubernetes-webai-rag/releases/download/v0.1.0/Setup-RAG.cmd)
-   from the [v0.1.0 release](https://github.com/wongcyrus/kubernetes-webai-rag/releases/tag/v0.1.0).
+1. Download a fresh [Setup-RAG.cmd](https://github.com/wongcyrus/kubernetes-webai-rag/releases/download/v0.2.0/Setup-RAG.cmd)
+   from the [v0.2.0 release](https://github.com/wongcyrus/kubernetes-webai-rag/releases/tag/v0.2.0).
    Save it in a separate installation folder, for example `D:\working\rag-install`.
 2. Run `Setup-RAG.cmd` **before the exam**, with internet access. It downloads both
    release archives, verifies their SHA-256 checksums and extracts them. Wait for
@@ -26,11 +26,23 @@ ready-to-run application.
    In this installed folder, `runtime\python.exe`, `serve.py` and `app\` must also
    exist.
 
-For manual installation, download `kubernetes-webai-rag-0.1.0-windows-x64-app.zip`
-and `kubernetes-webai-rag-0.1.0-windows-x64-model.zip` from the release assets.
+For manual installation, download `kubernetes-webai-rag-0.2.0-windows-x64-app.zip`
+and `kubernetes-webai-rag-0.2.0-windows-x64-model.zip` from the release assets.
 Fully extract **both** into the same parent directory so their
 `kubernetes-webai-rag/` folders merge. Do not choose the "Source code" downloads
 or run the launcher directly inside a ZIP.
+
+**Updating from v0.1.0:** stop the server with Ctrl+C and close the browser tab
+before replacing files. The old `Setup-RAG.cmd` is pinned to v0.1.0: deleting the
+installed folder and rerunning that script reinstalls the old UI. Download the
+fresh v0.2.0 installer above and check that its window says `v0.2.0 setup`.
+Run it in the same parent directory; a checksum-matching model ZIP in `.downloads`
+is reused even if its filename belongs to an older version.
+
+If the installed models are still present, you can instead extract only the new
+application ZIP into the existing parent directory. The Gemma model is unchanged;
+do not delete the installed folder or download the model again just to update the
+UI. Start the server again and reload the page.
 
 The release application archive includes the unmodified Windows x64 embeddable
 Python runtime. Its launcher serves `app/` on `127.0.0.1:8080` and opens:
@@ -65,9 +77,10 @@ computer**, then **run independently on every student's computer**. Python only
 serves local files; retrieval and answer generation run in the student's browser.
 There is no cloud inference service or shared AI backend.
 
-**Version note:** this architecture describes the current source on `main`.
-The published `v0.1.0` Windows archives predate the two-panel chat, Markdown
-rendering and Copy code features. Updating source does not update those archives.
+**Version note:** use v0.2.0 for the two-panel chat, Markdown rendering and Copy
+code features. The v0.1.0 installers and archives contain the old single-question
+UI and remain pinned to that version. Updating source does not update an existing
+Windows installation.
 
 ### 1. Offline preparation and distribution
 

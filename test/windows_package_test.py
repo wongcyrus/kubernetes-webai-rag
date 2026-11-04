@@ -120,16 +120,23 @@ class WindowsPackageTests(unittest.TestCase):
         self.assertIn(packager.digest(model), script)
         self.assertIn("[Security.Cryptography.SHA256]::Create()", script)
         self.assertIn("ComputeHash($s)", script)
+        self.assertIn(f"Kubernetes WebAI RAG v{self.release['version']} setup", script)
+        self.assertIn("[IO.Directory]::GetFiles", script)
+        self.assertIn("[IO.File]::Move", script)
         self.assertNotIn("ExecutionPolicy", script)
         self.assertIn("if errorlevel 1 goto failed", script)
         if os.name == "nt":
             downloads = output / ".downloads"
             downloads.mkdir()
-            for archive in (app, model):
-                shutil.copyfile(archive, downloads / archive.name)
+            shutil.copyfile(app, downloads / app.name)
+            cached_model = downloads / "kubernetes-webai-rag-previous-windows-x64-model.zip"
+            shutil.copyfile(model, cached_model)
+            (downloads / model.name).write_bytes(b"incomplete archive")
             subprocess.run(["cmd.exe", "/d", "/c", "Setup-RAG.cmd"],
                            cwd=output, input="\r\n", text=True, timeout=30, check=True)
             server.check_package(output / "kubernetes-webai-rag/app")
+            self.assertFalse(cached_model.exists())
+            self.assertEqual(packager.digest(downloads / model.name), packager.digest(model))
 
     def test_server_suppresses_disconnected_downloads_and_keeps_serving(self):
         handler = functools.partial(server.Handler, directory=str(self.root), release=self.release)
